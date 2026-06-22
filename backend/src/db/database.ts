@@ -28,6 +28,37 @@ export async function getDb() {
   return db;
 }
 
+/** Agrega una columna si todavía no existe (migración idempotente). */
+async function ensureColumn(table: string, column: string, definition: string) {
+  if (!db) return;
+  const cols = await db.all(`PRAGMA table_info(${table})`);
+  const exists = cols.some((c: any) => c.name === column);
+  if (!exists) {
+    await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+/** Devuelve toda la configuración como objeto clave→valor. */
+export async function getConfig(): Promise<Record<string, string>> {
+  const dbi = await getDb();
+  const rows = await dbi.all('SELECT clave, valor FROM config');
+  const out: Record<string, string> = {};
+  for (const r of rows as any[]) out[r.clave] = r.valor;
+  return out;
+}
+
+/** Actualiza varias claves de configuración. */
+export async function setConfig(updates: Record<string, string>): Promise<void> {
+  const dbi = await getDb();
+  for (const [clave, valor] of Object.entries(updates)) {
+    await dbi.run(
+      'INSERT INTO config (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor',
+      clave,
+      String(valor)
+    );
+  }
+}
+
 async function initSchema() {
   if (!db) return;
 
@@ -63,15 +94,48 @@ async function initSchema() {
     CREATE TABLE IF NOT EXISTS marcaciones (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       trabajador_id INTEGER NOT NULL,
-      fecha TEXT NOT NULL,              -- YYYY-MM-DD
+      fecha TEXT NOT NULL,              -- YYYY-MM-DD (fecha local de la marca)
       hora TEXT NOT NULL,               -- HH:MM:SS
-      tipo TEXT NOT NULL,               -- ENTRADA, BREAK_IN, BREAK_OUT, SALIDA
+      ts TEXT,                          -- timestamp ISO completo (para sesiones nocturnas)
+      tipo TEXT NOT NULL,               -- ENTRADA, BREAK_IN, BREAK_OUT, MARCA
       estado TEXT NOT NULL,             -- PUNTUAL, TARDANZA, CORRECTO
       foto_scan_url TEXT,               -- Captura facial tomada por la cámara en tiempo real
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (trabajador_id) REFERENCES trabajadores (id) ON DELETE CASCADE
     )
   `);
+
+  // 3b. Tabla de Configuración global (clave/valor)
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS config (
+      clave TEXT PRIMARY KEY,
+      valor TEXT NOT NULL
+    )
+  `);
+
+  // Migraciones suaves de columnas nuevas
+  await ensureColumn('trabajadores', 'tarifa_hora', 'REAL DEFAULT 0');
+  await ensureColumn('trabajadores', 'activo', 'INTEGER DEFAULT 1');
+  await ensureColumn('marcaciones', 'ts', 'TEXT');
+
+  // Semilla de configuración por defecto
+  const defaultConfig: Record<string, string> = {
+    dedup_minutos: '5',            // marcas dentro de este rango = misma marca (la más temprana)
+    break_umbral_minutos: '60',    // tras este tiempo trabajando, una marca abre refrigerio
+    umbral_nueva_jornada_horas: '14', // hueco que separa una jornada de la siguiente (debe superar el mayor hueco entre marcas de un mismo turno)
+    nocturno_inicio: '22:00',      // inicio del rango nocturno
+    nocturno_fin: '06:00',         // fin del rango nocturno
+    mult_nocturno: '1.35',         // multiplicador de tarifa en horario nocturno
+    horas_jornada_normal: '8',     // horas antes de considerar horas extra
+    mult_extra: '1.25',            // multiplicador de tarifa en horas extra
+    moneda: 'S/',                  // símbolo de moneda
+    device_ip: '192.168.0.16',
+    device_user: 'admin',
+    device_pass: 'Rubidio8.8',
+  };
+  for (const [clave, valor] of Object.entries(defaultConfig)) {
+    await db.run('INSERT OR IGNORE INTO config (clave, valor) VALUES (?, ?)', clave, valor);
+  }
 
   // Insertar datos semilla para pruebas si las tablas están vacías
   const row = await db.get('SELECT COUNT(*) as count FROM horarios');

@@ -1,0 +1,39 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    image: maservit-backend
+    container_name: maservit-backend
+    restart: unless-stopped
+    environment:
+      - PORT=5000
+      - TZ=America/Lima
+    volumes:
+      - backend-data:/app/backend/data      # base SQLite persistente
+      - uploads:/app/public/uploads         # rostros y capturas
+    ports:
+      # Publicado en la LAN: el terminal Hikvision envía los eventos a <ip-servidor>:5000
+      - "5000:5000"
+    networks:
+      - maservit
+
+  frontend:
+    build:
+      context: ./frontend
+    image: maservit-frontend
+    container_name: maservit-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"                           # panel web: http://<ip-servidor>:8080
+    networks:
+      - maservit
+
+volumes:
+  backend-data:
+  uploads:
+
+networks:
+  maservit:
+    driver: bridge

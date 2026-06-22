@@ -3,8 +3,9 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { Parser } from 'xml2js';
-import { getDb } from '../db/database';
-import { classifyScan, Schedule, AttendanceLog } from '../services/rulesEngine';
+import { getDb, getConfig } from '../db/database';
+import { classifyPunch, PunchRecord, EngineConfig } from '../services/attendanceEngine';
+import { getSnapshot } from '../services/deviceClient';
 import { EventEmitter } from 'events';
 
 const router = Router();
@@ -144,8 +145,9 @@ const handleEvents: RequestHandler = async (req: Request, res: Response): Promis
     const eventData = await parseEventMetadata(req);
     
     if (!eventData) {
-      console.warn('[Hikvision] Petición inválida o metadata no encontrada.');
-      res.status(400).json({ status: 'error', message: 'No metadata found' });
+      // Eventos sin empleado (heartbeats / estados del terminal): se ignoran.
+      // Respondemos 200 OK para que el dispositivo no reintente ni acumule cola.
+      res.status(200).json({ status: 'ignored' });
       return;
     }
 
@@ -179,18 +181,18 @@ const handleEvents: RequestHandler = async (req: Request, res: Response): Promis
     );
 
     if (!trabajador) {
-      console.warn(`[Hikvision] Empleado con ID "${employeeNoString}" no está registrado en la base de datos.`);
-      res.status(404).json({ status: 'error', message: `Worker ${employeeNoString} not found in DB` });
+      // Respondemos 200 (acuse) para que el terminal no reintente y drene su cola,
+      // aunque el empleado no exista en la base local.
+      console.warn(`[Hikvision] Empleado con ID "${employeeNoString}" no está en la base de datos. Ignorado.`);
+      res.status(200).json({ status: 'ignored', message: `Worker ${employeeNoString} not found` });
       return;
     }
 
-    // 2. Extraer fecha y hora locales del evento de Hikvision (formato "YYYY-MM-DD" e "HH:MM:SS")
-    // Hikvision envía dateTime en formato ISO-8601 (ej. "2026-05-20T08:05:22-05:00")
+    // 2. Resolver el timestamp absoluto del evento (Hikvision envía ISO-8601, ej.
+    //    "2026-05-20T08:05:22-05:00"). Conservamos fecha/hora locales para mostrar.
     const dateObj = new Date(dateTime);
+    const nowTs = dateObj.getTime();
     const fecha = dateTime.substring(0, 10); // "2026-05-20"
-    
-    // Extraer hora local (HH:MM:SS) teniendo en cuenta zona horaria o tomando la porción de texto
-    // La porción de texto del ISO-8601 es la más segura: "08:05:22"
     let hora = "08:00:00";
     const timeMatch = dateTime.match(/T(\d{2}:\d{2}:\d{2})/);
     if (timeMatch) {
@@ -199,34 +201,81 @@ const handleEvents: RequestHandler = async (req: Request, res: Response): Promis
       hora = dateObj.toTimeString().split(' ')[0];
     }
 
-    // 3. Obtener el horario asignado (o uno por defecto si no tiene)
-    const schedule: Schedule = {
-      id: trabajador.horario_id || 0,
-      nombre: trabajador.horario_nombre || 'Sin Horario',
-      hora_entrada: trabajador.hora_entrada || '09:00',
-      hora_salida: trabajador.hora_salida || '18:00',
-      minutos_tolerancia: trabajador.minutos_tolerancia !== undefined ? trabajador.minutos_tolerancia : 15,
-      break_duracion: trabajador.break_duracion !== undefined ? trabajador.break_duracion : 60
+    // 3. Cargar configuración del motor
+    const cfg = await getConfig();
+    const engineCfg: EngineConfig = {
+      dedup_minutos: Number(cfg.dedup_minutos ?? 5),
+      break_umbral_minutos: Number(cfg.break_umbral_minutos ?? 60),
+      umbral_nueva_jornada_horas: Number(cfg.umbral_nueva_jornada_horas ?? 14),
     };
 
-    // 4. Obtener marcaciones que ya tenga registradas en este día
-    const existingLogsToday: AttendanceLog[] = await db.all(
-      'SELECT id, trabajador_id, fecha, hora, tipo, estado FROM marcaciones WHERE trabajador_id = ? AND fecha = ? ORDER BY id ASC',
+    // 4. Cargar marcas recientes del trabajador (ventana suficiente para la jornada)
+    const ventanaHoras = Math.max(engineCfg.umbral_nueva_jornada_horas + 2, 14);
+    const desde = new Date(nowTs - ventanaHoras * 3600000).toISOString();
+    const recientesRows = await db.all(
+      `SELECT ts, hora, fecha, tipo FROM marcaciones
+       WHERE trabajador_id = ? AND (ts IS NOT NULL AND ts >= ?)
+       ORDER BY ts ASC`,
       trabajador.id,
-      fecha
+      desde
     );
+    const recientes: PunchRecord[] = recientesRows.map((r: any) => ({
+      ts: new Date(r.ts).getTime(),
+      tipo: r.tipo,
+    }));
 
-    // 5. Clasificar la marcación
-    const { tipo, estado } = classifyScan(hora, existingLogsToday, schedule);
-    console.log(`[Rules Engine] Clasificación: ${tipo} (${estado})`);
+    // 5. Clasificar la marca con el motor (dedup + sesiones + refrigerio)
+    const decision = classifyPunch(nowTs, recientes, engineCfg);
+
+    if (decision.action === 'ignore') {
+      console.log(`[Motor] Marca de ${trabajador.nombre} ignorada: ${decision.reason}`);
+      res.status(200).json({ status: 'ignored', reason: decision.reason });
+      return;
+    }
+
+    const tipo = decision.tipo;
+    const estadoMap: Record<string, string> = {
+      ENTRADA: 'ENTRADA',
+      BREAK_IN: 'REFRIGERIO',
+      BREAK_OUT: 'RETORNO',
+      MARCA: 'MARCA',
+    };
+    // Puntualidad de la entrada según tolerancia del horario
+    let estado = estadoMap[tipo] || 'MARCA';
+    if (tipo === 'ENTRADA' && trabajador.hora_entrada) {
+      const [eh, em] = String(trabajador.hora_entrada).split(':').map(Number);
+      const tol = trabajador.minutos_tolerancia != null ? Number(trabajador.minutos_tolerancia) : 15;
+      const limite = eh * 60 + (em || 0) + tol;
+      const marca = dateObj.getHours() * 60 + dateObj.getMinutes();
+      estado = marca > limite ? 'TARDANZA' : 'PUNTUAL';
+    }
+    console.log(`[Motor] ${trabajador.nombre} -> ${tipo} (${estado})`);
+
+    // 5b. Si el evento no trajo foto, capturar un snapshot de la cámara al marcar
+    if (!fotoScanUrl) {
+      try {
+        const jpg = await getSnapshot({
+          ip: cfg.device_ip ?? '192.168.0.16',
+          user: cfg.device_user ?? 'admin',
+          pass: cfg.device_pass ?? '',
+        });
+        const fname = `scan-${Date.now()}-${Math.round(Math.random() * 1e9)}.jpg`;
+        fs.writeFileSync(path.join(uploadDir, fname), jpg);
+        fotoScanUrl = `/uploads/scans/${fname}`;
+        console.log(`[Hikvision] Snapshot de respaldo guardado: ${fotoScanUrl}`);
+      } catch (e: any) {
+        console.warn(`[Hikvision] No se pudo capturar snapshot de respaldo: ${e.message}`);
+      }
+    }
 
     // 6. Registrar en Base de Datos
     const insertResult = await db.run(
-      `INSERT INTO marcaciones (trabajador_id, fecha, hora, tipo, estado, foto_scan_url)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO marcaciones (trabajador_id, fecha, hora, ts, tipo, estado, foto_scan_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       trabajador.id,
       fecha,
       hora,
+      dateObj.toISOString(),
       tipo,
       estado,
       fotoScanUrl || null

@@ -42,3 +42,7 @@ Thumbs.db
 # Uploaded face scans from physical terminal (exclude actual images)
 public/uploads/scans/*
 !public/uploads/scans/.gitkeep
+
+# Worker face photos (biometric/personal data, persisted via docker volume only)
+public/uploads/faces/*
+!public/uploads/faces/.gitkeep

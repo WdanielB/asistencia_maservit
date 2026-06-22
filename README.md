@@ -126,3 +126,40 @@ cd backend
 node scripts/reset_db.js
 ```
 Esto limpiará de manera segura las tablas de SQLite (esquivando bloqueos de base de datos) y re-sembrará las tablas limpias para un reinicio fresco.
+
+---
+
+## Despliegue con Docker
+
+El sistema se empaqueta en dos contenedores orquestados con `docker-compose`:
+
+- **backend**: Express + SQLite (puerto `5000`), zona horaria fijada en `America/Lima` (necesaria para el cálculo de horas nocturnas y extra).
+- **frontend**: build estático de Vite servido por **nginx**, que además hace de *reverse proxy* hacia el backend (`/api`, `/uploads`, `/health`). El frontend usa rutas relativas, por lo que funciona detrás del proxy sin configurar IPs.
+
+### Levantar
+
+```bash
+docker compose up -d --build
+```
+
+- Panel web: `http://<ip-servidor>:8080`
+- El terminal Hikvision debe apuntar sus eventos a `http://<ip-servidor>:5000/api/v1/hikvision/events` (el backend se publica en el puerto `5000` de la LAN).
+
+### Persistencia
+
+Dos volúmenes nombrados conservan los datos entre reinicios:
+
+- `backend-data` → base SQLite (`/app/backend/data`)
+- `uploads` → rostros enrolados y capturas (`/app/public/uploads`)
+
+### Operación
+
+```bash
+# Sincronizar usuarios del terminal hacia la app (dentro del contenedor)
+docker compose exec backend node scripts/sync_device_users.js
+
+# Ver logs
+docker compose logs -f backend
+```
+
+> Desarrollo local (sin Docker): el frontend usa rutas relativas y Vite las redirige al backend vía proxy (ver `frontend/vite.config.ts`). Si el backend no está en `localhost:5000`, definí `VITE_BACKEND` antes de `npm run dev`.
