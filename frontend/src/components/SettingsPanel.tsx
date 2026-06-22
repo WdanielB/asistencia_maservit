@@ -33,8 +33,7 @@ const GROUPS: { title: string; fields: FieldDef[] }[] = [
  title: 'Dispositivo Hikvision',
  fields: [
  { key: 'device_ip', label: 'IP del dispositivo', help: 'Dirección del terminal en la red local.' },
- { key: 'device_user', label: 'Usuario', help: 'Usuario admin del terminal.' },
- { key: 'device_pass', label: 'Contraseña', help: 'Dejar en blanco para no cambiarla.', type: 'password' },
+ { key: 'device_user', label: 'Usuario', help: 'Usuario admin del terminal. La CONTRASEÑA se configura por seguridad en la variable de entorno DEVICE_PASS (no se guarda en la base de datos).' },
  ],
  },
 ];

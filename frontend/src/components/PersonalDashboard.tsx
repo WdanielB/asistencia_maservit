@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { withToken } from '../auth';
 
 const API = '/api/v1/admin';
 
@@ -90,7 +91,7 @@ export default function PersonalDashboard() {
  setStartDate(si); setEndDate(ei); load(si, ei);
  };
 
- const exportUrl = `${API}/reportes/horas.csv?startDate=${startDate}&endDate=${endDate}`;
+ const exportUrl = withToken(`${API}/reportes/horas.csv?startDate=${startDate}&endDate=${endDate}`);
 
  const conMovimiento = rows.filter((r) => r.sesionesCount > 0).sort((a, b) => b.montoTotal - a.montoTotal);
  const sinMovimiento = rows.filter((r) => r.sesionesCount === 0);

@@ -6,6 +6,8 @@ import ReportsPanel from './components/ReportsPanel';
 import PersonalDashboard from './components/PersonalDashboard';
 import LiveCamera from './components/LiveCamera';
 import SettingsPanel from './components/SettingsPanel';
+import Login from './components/Login';
+import { isAuthed, clearToken } from './auth';
 
 type ActiveView = 'dashboard' | 'personal' | 'trabajadores' | 'horarios' | 'reportes' | 'camara' | 'config';
 
@@ -48,6 +50,13 @@ const ic = {
 
 export default function App() {
  const [activeView, setActiveView] = useState<ActiveView>('dashboard');
+ const [authed, setAuthed] = useState<boolean>(isAuthed());
+
+ const logout = () => { clearToken(); setAuthed(false); };
+
+ if (!authed) {
+ return <Login onSuccess={() => setAuthed(true)} />;
+ }
 
  const renderActiveView = () => {
  switch (activeView) {
@@ -114,7 +123,13 @@ export default function App() {
  </nav>
 
  {/* Footer del Sidebar */}
- <div style={{ borderTop: '1px solid rgba(15, 23, 42, 0.05)', paddingTop: '20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+ <div style={{ borderTop: '1px solid rgba(15, 23, 42, 0.05)', paddingTop: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+ <button className="btn btn-secondary" onClick={logout} style={{ justifyContent: 'flex-start', padding: '10px 14px', fontSize: '0.85rem' }}>
+ <span style={{ marginRight: '10px', display: 'inline-flex' }}>
+ <svg xmlns="http://www.w3.org/2000/svg" {...ic} width={16} height={16}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+ </span>
+ Cerrar sesión
+ </button>
  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Hikvision DS-K1T320EFX</div>
  <div style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Conexión Directa HTTP/ISAPI</div>
  </div>

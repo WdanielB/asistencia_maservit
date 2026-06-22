@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -5,6 +6,7 @@ import fs from 'fs';
 import { getDb } from './db/database';
 import hikvisionRouter from './routes/hikvisionListener';
 import adminRouter from './routes/adminRoutes';
+import { requireAuth, loginHandler } from './auth';
 
 // Trigger database reload & exact-hour historical mock data seeding
 const app = express();
@@ -28,9 +30,14 @@ if (!fs.existsSync(publicDir)) {
 }
 app.use('/uploads', express.static(path.join(publicDir, 'uploads')));
 
+// Login (público): debe ir ANTES del guard para no exigir token a sí mismo.
+app.post('/api/v1/admin/login', loginHandler);
+
 // Rutas de la Aplicación
+// El terminal Hikvision no puede enviar token: su endpoint queda abierto en la LAN.
 app.use('/api/v1/hikvision', hikvisionRouter);
-app.use('/api/v1/admin', adminRouter);
+// El panel administrativo exige token válido (cabecera Bearer o ?token=).
+app.use('/api/v1/admin', requireAuth, adminRouter);
 
 // Ruta básica de verificación de salud
 app.get('/health', (req, res) => {

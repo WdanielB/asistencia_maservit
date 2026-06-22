@@ -5,7 +5,7 @@ import fs from 'fs';
 import { getDb, getConfig, setConfig } from '../db/database';
 import { liveEvents } from './hikvisionListener';
 import { computeWorkerReport, PayConfig, CalcPunch, WorkerReport } from '../services/hoursCalculator';
-import { getSnapshot, createDeviceUser, enrollFace, captureFingerprint, saveFingerprint, DeviceConfig } from '../services/deviceClient';
+import { getSnapshot, createDeviceUser, enrollFace, captureFingerprint, saveFingerprint, DeviceConfig, resolveDeviceConfig } from '../services/deviceClient';
 
 const router = Router();
 const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
@@ -40,13 +40,8 @@ function toPayConfig(cfg: Record<string, string>): PayConfig {
   };
 }
 
-function deviceFromConfig(cfg: Record<string, string>): DeviceConfig {
-  return {
-    ip: cfg.device_ip ?? '192.168.0.16',
-    user: cfg.device_user ?? 'admin',
-    pass: cfg.device_pass ?? '',
-  };
-}
+/** Credenciales del dispositivo: prioriza variables de entorno (ver resolveDeviceConfig). */
+const deviceFromConfig = (cfg: Record<string, string>): DeviceConfig => resolveDeviceConfig(cfg);
 
 /** Calcula el reporte de horas/pago de un trabajador en un rango de fechas. */
 async function reporteTrabajador(

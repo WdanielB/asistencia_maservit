@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { withToken } from '../auth';
 
 interface Stats {
  totalTrabajadores: number;
@@ -50,7 +51,7 @@ export default function DashboardHome() {
  
  // Iniciar conexión SSE para actualizaciones en tiempo real
  setConnectionStatus('conectar');
- const eventSource = new EventSource('/api/v1/admin/live-feed');
+ const eventSource = new EventSource(withToken('/api/v1/admin/live-feed'));
 
  eventSource.onopen = () => {
  setConnectionStatus('conectado');

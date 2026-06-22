@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { withToken } from '../auth';
 
 interface Worker {
  id: number;
@@ -204,7 +205,7 @@ export default function ReportsPanel() {
  <a
  className="btn btn-secondary"
  style={{ padding: '10px', textDecoration: 'none' }}
- href={`/api/v1/admin/marcaciones.csv?${new URLSearchParams({ ...(startDate ? { startDate } : {}), ...(endDate ? { endDate } : {}), ...(workerId ? { trabajadorId: workerId } : {}) }).toString()}`}
+ href={withToken(`/api/v1/admin/marcaciones.csv?${new URLSearchParams({ ...(startDate ? { startDate } : {}), ...(endDate ? { endDate } : {}), ...(workerId ? { trabajadorId: workerId } : {}) }).toString()}`)}
  >Exportar CSV</a>
  </div>
  </form>

@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { withToken } from '../auth';
 
 const API = '/api/v1/admin';
 
@@ -16,7 +17,7 @@ export default function LiveCamera() {
 
  const downloadSnapshot = () => {
  const a = document.createElement('a');
- a.href = `${API}/camara/snapshot?t=${Date.now()}`;
+ a.href = withToken(`${API}/camara/snapshot?t=${Date.now()}`);
  a.download = `captura_${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`;
  a.click();
  };
@@ -39,7 +40,7 @@ export default function LiveCamera() {
  {streaming && !error && (
  <img
  ref={imgRef}
- src={`${API}/camara/stream?t=${bust}`}
+ src={withToken(`${API}/camara/stream?t=${bust}`)}
  alt="Cámara en vivo"
  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
  onError={() => { setStreaming(false); setError('No se pudo conectar con la cámara. Verificá que el dispositivo esté en línea.'); }}

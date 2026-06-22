@@ -129,9 +129,10 @@ async function initSchema() {
     horas_jornada_normal: '8',     // horas antes de considerar horas extra
     mult_extra: '1.25',            // multiplicador de tarifa en horas extra
     moneda: 'S/',                  // símbolo de moneda
+    // IP y usuario del terminal (no sensibles). La CONTRASEÑA del dispositivo
+    // NO se guarda en la BD: viaja por la variable de entorno DEVICE_PASS.
     device_ip: '192.168.0.16',
     device_user: 'admin',
-    device_pass: 'Rubidio8.8',
   };
   for (const [clave, valor] of Object.entries(defaultConfig)) {
     await db.run('INSERT OR IGNORE INTO config (clave, valor) VALUES (?, ?)', clave, valor);

@@ -8,6 +8,14 @@ services:
     environment:
       - PORT=5000
       - TZ=America/Lima
+      - NODE_ENV=production
+      # Credenciales del terminal Hikvision (se leen del archivo .env de la raíz)
+      - DEVICE_IP=${DEVICE_IP:-192.168.0.16}
+      - DEVICE_USER=${DEVICE_USER:-admin}
+      - DEVICE_PASS=${DEVICE_PASS:-}
+      # Autenticación del panel (login). Cambia AUTH_SECRET en producción.
+      - AUTH_SECRET=${AUTH_SECRET:-}
+      - AUTH_PASSWORD_HASH=${AUTH_PASSWORD_HASH:-}
     volumes:
       - backend-data:/app/backend/data      # base SQLite persistente
       - uploads:/app/public/uploads         # rostros y capturas

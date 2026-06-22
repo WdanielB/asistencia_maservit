@@ -5,7 +5,7 @@ import fs from 'fs';
 import { Parser } from 'xml2js';
 import { getDb, getConfig } from '../db/database';
 import { classifyPunch, PunchRecord, EngineConfig } from '../services/attendanceEngine';
-import { getSnapshot } from '../services/deviceClient';
+import { getSnapshot, resolveDeviceConfig } from '../services/deviceClient';
 import { EventEmitter } from 'events';
 
 const router = Router();
@@ -254,11 +254,7 @@ const handleEvents: RequestHandler = async (req: Request, res: Response): Promis
     // 5b. Si el evento no trajo foto, capturar un snapshot de la cámara al marcar
     if (!fotoScanUrl) {
       try {
-        const jpg = await getSnapshot({
-          ip: cfg.device_ip ?? '192.168.0.16',
-          user: cfg.device_user ?? 'admin',
-          pass: cfg.device_pass ?? '',
-        });
+        const jpg = await getSnapshot(resolveDeviceConfig(cfg));
         const fname = `scan-${Date.now()}-${Math.round(Math.random() * 1e9)}.jpg`;
         fs.writeFileSync(path.join(uploadDir, fname), jpg);
         fotoScanUrl = `/uploads/scans/${fname}`;

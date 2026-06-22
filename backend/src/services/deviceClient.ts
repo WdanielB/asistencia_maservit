@@ -13,6 +13,19 @@ export interface DeviceConfig {
   pass: string;
 }
 
+/**
+ * Resuelve las credenciales del dispositivo dando prioridad a las variables de
+ * entorno (más seguras, no se guardan en la BD) y cayendo a la config de la BD
+ * y a valores por defecto. La contraseña debería venir SIEMPRE por entorno.
+ */
+export function resolveDeviceConfig(cfg: Record<string, string> = {}): DeviceConfig {
+  return {
+    ip: process.env.DEVICE_IP || cfg.device_ip || '192.168.0.16',
+    user: process.env.DEVICE_USER || cfg.device_user || 'admin',
+    pass: process.env.DEVICE_PASS || cfg.device_pass || '',
+  };
+}
+
 interface DigestState {
   realm: string;
   nonce: string;
